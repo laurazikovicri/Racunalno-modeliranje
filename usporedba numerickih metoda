@@ -1,0 +1,176 @@
+# Numeričke metode za rješavanje nelinearnih jednadžbi - Laura Grbac
+from decimal import Decimal, getcontext, localcontext
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
+
+getcontext().prec = 80
+D = Decimal
+
+
+# Metoda bisekcije
+def bisekcija(f, a, b, eps):
+    if not a < b or f(a) * f(b) >= 0:
+        raise ValueError("Potreban je interval a < b uz f(a)*f(b) < 0.")
+
+    fa = f(a)
+    k = 0
+    aproksimacije = []
+
+    while b - a >= eps:
+        x = (a + b) / 2
+        aproksimacije.append(x)
+        fx = f(x)
+
+        if fx == 0:
+            return x, k, aproksimacije
+        elif fa * fx < 0:
+            b = x
+        else:
+            a = x
+            fa = fx
+        k += 1
+
+    x = (a + b) / 2
+    aproksimacije.append(x)
+    return x, k, aproksimacije
+
+
+# Newtonova metoda
+def newton(f, df, x, eps_x, eps_f, maks_iteracija=30):
+    aproksimacije = []
+
+    for k in range(maks_iteracija):
+        fx = f(x)
+        dfx = df(x)
+
+        if dfx == 0:
+            raise ValueError("Derivacija je nula.")
+
+        x_novi = x - fx / dfx
+        aproksimacije.append(x_novi)
+
+        # Kombinirani kriterij, kao u Excelu
+        if abs(x_novi - x) < eps_x and abs(fx) < eps_f:
+            return x_novi, k, aproksimacije
+
+        x = x_novi
+
+    raise ValueError("Dosegnut je maksimalan broj iteracija.")
+
+
+# Metoda sekante
+def sekanta(f, x0, x1, eps_x, eps_f, maks_iteracija=30):
+    f0 = f(x0)
+    f1 = f(x1)
+    aproksimacije = []
+
+    for k in range(maks_iteracija):
+        if f1 - f0 == 0:
+            raise ValueError("Nazivnik u formuli sekante je nula.")
+
+        x_novi = x1 - f1 * (x1 - x0) / (f1 - f0)
+        aproksimacije.append(x_novi)
+
+        # Kombinirani kriterij, kao u Excelu
+        if abs(x_novi - x1) < eps_x and abs(f1) < eps_f:
+            return x_novi, k, aproksimacije
+
+        x0, f0 = x1, f1
+        x1 = x_novi
+        f1 = f(x1)
+
+    raise ValueError("Dosegnut je maksimalan broj iteracija.")
+
+
+# Zadani problem: nelinearna opruga
+def f(x):
+    return 1000*x**3 + 2800*x - D("784.8")
+
+
+def df(x):
+    return 3000*x**2 + 2800
+
+
+# Referentno rješenje: Cardanova formula
+def cardano():
+    # Referentno rješenje računamo dodatno povećanom preciznošću.
+    with localcontext() as ctx:
+        ctx.prec = 100
+
+        p = D("2.8")
+        q = D("-0.7848")
+        delta = (q / 2)**2 + (p / 3)**3
+
+        def kubni_korijen(z):
+            korijen = abs(z) ** (D(1) / 3)
+            return korijen if z >= 0 else -korijen
+
+        x = (
+            kubni_korijen(-q / 2 + delta.sqrt())
+            + kubni_korijen(-q / 2 - delta.sqrt())
+        )
+
+    return +x
+
+
+x_ref = cardano()
+eps_x = D("1e-6")  # Tolerancija pomaka [m]
+eps_f = D("1e-6")  # Tolerancija reziduala [N]
+
+# Izračuni — ulazne vrijednosti također su Decimal
+x_b, k_b, niz_b = bisekcija(f, D("-1"), D("1"), eps_x)
+x_n, k_n, niz_n = newton(f, df, D("1"), eps_x, eps_f)
+x_s, k_s, niz_s = sekanta(f, D("-1"), D("1"), eps_x, eps_f)
+
+print(f"Referentno rješenje: {x_ref:.50f} m")
+
+print("\nBISEKCIJA")
+print(f"Ravnotežni položaj: {x_b:.12f} m")
+print(f"Broj raspolavljanja intervala: {k_b}")
+print(f"Broj izračunatih polovišta: {len(niz_b)}")
+
+for naziv, x, k, niz in [
+    ("NEWTONOVA METODA", x_n, k_n, niz_n),
+    ("METODA SEKANTE", x_s, k_s, niz_s)
+]:
+    print(f"\n{naziv}")
+    print(f"Ravnotežni položaj: {x:.40f} m")
+    print(f"Završni indeks k: {k}")
+    print(f"Broj izračunatih novih aproksimacija: {len(niz)}")
+
+
+# Graf relativne postotne pogreške
+fig, ax = plt.subplots(figsize=(9, 5))
+
+for naziv, niz, boja in [
+    ("Bisekcija", niz_b, "tab:blue"),
+    ("Newtonova metoda", niz_n, "tab:orange"),
+    ("Metoda sekante", niz_s, "tab:green")
+]:
+    # Pogreške računamo velikom preciznošću.
+    pogreske = [100 * abs((x - x_ref) / x_ref) for x in niz]
+
+    # U float pretvaramo tek gotove pogreške radi crtanja.
+    # Eventualne nule izostavljamo, bez umjetnog pomicanja.
+    pogreske_za_graf = [
+        float(e) if e > 0 else float("nan")
+        for e in pogreske
+    ]
+
+    ax.semilogy(
+        range(len(niz)),
+        pogreske_za_graf,
+        label=naziv,
+        color=boja,
+        marker="o",
+        markersize=4
+    )
+
+ax.set_title("Usporedba konvergencije numeričkih metoda")
+ax.set_xlabel("Indeks iteracije k")
+ax.set_ylabel("Relativna pogreška [%]")
+ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+ax.grid(True, which="both", alpha=0.3)
+ax.legend()
+plt.tight_layout()
+plt.show()
